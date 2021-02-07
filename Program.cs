@@ -1,146 +1,82 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.IO;
 
-namespace BullsAndCowsApp
+using SerializationApp.Serializers;
+
+namespace SerializationApp
 {
     class Program
-    {
-        static bool isGuessed = false;
-
-
+    {       
         static void Main(string[] args)
         {
-            Console.WriteLine("***Bulls and Cows***");
-            Console.WriteLine("RULES: ");
-            Console.WriteLine("The rules of the game are pretty simple. You imagine the number (better write it down somewhere to don't forget), and I try to guess it.\n" +
-                "After every my guess you answer me how much is there bulls and cows.\n" +
-                "Bulls - count of numbers that in your imagined number on its place.\n" +
-                "Cows - count of number thats included in your imagined number but not in its right place.\n" +
-                "For example, if you'll imagine 5402 and I guess 7012, you've got to answer B - 1; C - 1\n\n");
-
-            var length = ReadNumber("Enter length of the number: ",
-                "Wrong input! Value of the length should be an integer in a range of 1-9!\nTry again!",
-                a => a > 0 && a <= 9);
-            Console.WriteLine();
-
-            Solver solver = new Solver(length);
-            solver.Guessed += Solver_Guessed;
-            var guess = solver.Solve();
-            do
+            try
             {
-                Console.WriteLine(guess);
-                Console.WriteLine("Possible answers for you: ");
-                PrintPossibleNumber(solver.PossibleAnswers);
-
-                int bulls = ReadNumber("Bulls: ", "Wrong input for a bull! Try again!", a => a <= length && a >= 0);
-                int cows = ReadNumber("Cows: ", "Wrong input for a cow! Try again!", a => a <= length && a >= 0);
-
-                try
+                if (args.Length < 3 || args.Length > 4)
                 {
-                    guess = solver.Solve(new Guess(guess, new BullsCows(bulls, cows)));
+                    var msg = args.Length < 3
+                        ? "Not enough arguments!"
+                        : "Too much arguments!";
+                    throw new ArgumentOutOfRangeException(msg);
                 }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.Message);
-                    Console.WriteLine("What will we do? -We can start over or roll back to some step." +
-                        "\nWrite 'so' - to start over or 'rb' - to roll back to some step.");
 
-                    var decision = ReadString("", "", a => a.ToLower().Trim().Equals("so") || a.ToLower().Trim().Equals("rb"));
-                    switch (decision)
-                    {
-                        case "so":
+                Serializer serializer;
+                var type = ParseArg(args[0].ToLower(),
+                    arg => arg.Equals("binary") || arg.Equals("xml"),
+                    "Wrong value for a type!");
+                var operation = ParseArg(args[1].ToLower(),
+                    arg => arg.Equals("ser") || arg.Equals("des"),
+                    "Wrong value for an operation");
+                var filePath = ParseArg(args[2].ToLower(),
+                    arg => Serializer.IsValidFilePath(arg), 
+                    "Wrong file path!");
+
+                switch (operation)
+                {
+                    case "ser":
+                        {
+                            if (args.Length < 4)
                             {
-                                Console.WriteLine("The game started over. Answer more carefully, and I would guess the number!");
-                                solver = new Solver(length);
-                                break;
+                                throw new ArgumentNullException("Can't serialize a structure without given path to the directory!");
                             }
-                        case "rb":
-                            {
-                                var step = ReadNumber($"Possible steps to roll back: {string.Join("  ", solver.SolverHistory.GetPossibleSteps())}\n" +
-                                    $"Okey, write the step to roll back: ",
-                                    $"Wrong value for a step :(",
-                                    a => solver.SolverHistory.IsAllowedStep(a));
-
-                                solver.RestoreState(step);
-                                Console.WriteLine("The game rolled back to step: " + step);
-                                break;
-                            }
-                    }
-                }
-
-                Console.WriteLine("\n\n");
-
-            } while (!isGuessed);
-
-            Console.WriteLine("Pres any key to exit...");
-
-            Console.ReadKey();
-        }
-
-        private static void PrintPossibleNumber(List<BullsCows> possible)
-        {
-            int count = 1;
-            var color = 1;
-
-            foreach (var num in possible)
-            {
-                if (count == 4)
-                {
-                    Console.WriteLine();
-                    count = 1;
-                }
-
-                Console.Write($"B: {num.Bulls}   C: {num.Cows}        ", Console.ForegroundColor = (ConsoleColor)color);
-                Console.ResetColor();
-                count++;
-                color++;
-                if (color > 14)
-                {
-                    color = 1;
+                            var directoryPath = ParseArg(args[3],
+                                arg => Directory.Exists(arg),
+                                "Wrong directory path!");
+                            serializer = SerializerStaticFactory.CreateSerializer(type, filePath, directoryPath);
+                            serializer.Serialize();
+                            Console.WriteLine("Structure was successfully serialized!");
+                            break;
+                        }
+                    case "des":
+                        {
+                            serializer = SerializerStaticFactory.CreateSerializer(type, filePath);
+                            var structure = serializer.Deserialize();
+                            Console.WriteLine("Your stucture:\n" + structure.ToString());
+                            Console.WriteLine("Structure was successfully deserialized!");
+                            break;
+                        }
                 }
             }
-
-            Console.WriteLine();
-        }
-
-        private static void Solver_Guessed(object obj, GuessedNumberEventArgs guessedNumberArgs)
-        {
-            Console.WriteLine($"Your number is {guessedNumberArgs.Number}" +
-                $"\nIt took me {guessedNumberArgs.Steps} steps to guess it!");
-            isGuessed = true;
-        }
-
-        private static int ReadNumber(string prompt, string errorMsg, Func<int, bool> condition)
-        {
-            int num = 0;
-            do
+            catch(Exception ex)
             {
-                Console.Write(prompt);
-                var isCorrectAnswer = int.TryParse(Console.ReadLine(), out num) && condition(num);
-                if (isCorrectAnswer)
-                    break;
-
-                Console.WriteLine(errorMsg);
-            } while (true);
-
-            return num;
-        }
-
-        private static string ReadString(string prompt, string errorMsg, Func<string, bool> condition)
-        {
-            var input = "";
-            do
-            {
-                input = Console.ReadLine();
-                Console.Write(prompt);
-                var isCorrectAnswer = condition(input);
-                if (isCorrectAnswer)
-                    break;
-
-                Console.WriteLine(errorMsg);
-            } while (true);
-
-            return input;
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(ex.Message);          
+                Console.WriteLine("\nTo serialize a directory, you should specify a type of serializer, an operation (ser - to serialize)," +
+                    "a path to file where the structure of the directory will be saved, and the path to the directory itself." +
+                    "\n\nType can be xml or binary. Operation can be ser(serialize) or des(deserialize).\n" +
+                    "\nExample of use: binary ser F:\\Data\\source.txt F:\\Data\n" +
+                    "\nTo deserialize a structure, you can drop out the path to the directory and specify the type of serializer (the one that was used to serialize), " +
+                    "an operation (des), and a path to the file in which the structure of the file stored.\n" +
+                    "\nExample of use: binary des F:\\Data\\source.txt\n" +
+                    "\nThere is a strict order of arguments in the program. The order of args should be next: type-> operation-> file path-> directory path (if deserializing).\n");
+                Console.ResetColor();
+            }
+        }   
+        
+        static string ParseArg(string arg, Func<string, bool> condition, string erorMsg)
+        {            
+            return condition(arg)
+                ? arg
+                : throw new ArgumentException(erorMsg);
         }
     }
 }
